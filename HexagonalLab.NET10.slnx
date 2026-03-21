@@ -7,5 +7,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/HexagonalLab.API.Tests/HexagonalLab.API.Tests.csproj" />
     <Project Path="tests/HexagonalLab.Core.Tests/HexagonalLab.Core.Tests.csproj" />
+    <Project Path="tests/HexagonalLab.Infrastructure.Tests/HexagonalLab.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>
