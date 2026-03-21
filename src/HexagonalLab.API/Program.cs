@@ -3,6 +3,7 @@ using HexagonalLab.Core.Ports;
 using HexagonalLab.Core.UseCases;
 using HexagonalLab.Infrastructure.Data;
 using HexagonalLab.Infrastructure.Repositories;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.EntityFrameworkCore;
 
 // ========================================================================
@@ -45,7 +46,21 @@ builder.Services.AddScoped<IItemInputPort, GetItemUseCase>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddScoped<IItemRepositoryPort, EfCoreRepositoryAdapter>();
+// PHASE 7: Add Memory Cache + Decorator Pattern
+builder.Services.AddMemoryCache();
+
+// Register base adapter (EF Core)
+builder.Services.AddScoped<EfCoreRepositoryAdapter>();
+
+// Register with Decorator (Cached wrapper)
+// PADRÃO CRÍTICO: Mesmo que DI mude, Core não muda!
+builder.Services.AddScoped<IItemRepositoryPort>(serviceProvider =>
+    new CachedRepositoryAdapter(
+        serviceProvider.GetRequiredService<EfCoreRepositoryAdapter>(),
+        serviceProvider.GetRequiredService<IMemoryCache>(),
+        TimeSpan.FromMinutes(5)  // Cache duration
+    )
+);
 
 // ─────────────────────────────────────────────────────────────────
 // 4. Build App

@@ -1,6 +1,8 @@
 namespace HexagonalLab.API.Tests.MultiplAdapters;
 
+using HexagonalLab.Core.Models;
 using HexagonalLab.Core.Ports;
+using HexagonalLab.Core.UseCases;
 using HexagonalLab.Infrastructure.Repositories;
 using Xunit;
 
@@ -201,33 +203,27 @@ public class MultipleAdaptersCompatibilityTests
 /// </summary>
 public class MockItemRepository : IItemRepositoryPort
 {
-    private readonly Dictionary<string, dynamic> _items = new();
+    private readonly Dictionary<string, Item> _items = new();
 
-    public Task<dynamic> GetByIdAsync(string id)
+    public Task<Item?> GetByIdAsync(string id)
     {
         if (_items.TryGetValue(id, out var item))
         {
-            return Task.FromResult(item);
+            return Task.FromResult<Item?>(item);
         }
 
-        // Retorna item padrão se não encontrado
-        return Task.FromResult<dynamic>(new
-        {
-            Id = id,
-            Name = $"Item {id}",
-            Description = "Test Item",
-            Status = "Active"
-        });
+        return Task.FromResult<Item?>(null);
     }
 
-    public Task<IEnumerable<dynamic>> GetAllAsync()
+    public Task<IEnumerable<Item>> GetAllAsync()
     {
-        return Task.FromResult<IEnumerable<dynamic>>(_items.Values);
+        return Task.FromResult<IEnumerable<Item>>(_items.Values.AsEnumerable());
     }
 
-    public Task SaveAsync(dynamic item)
+    public Task SaveAsync(Item item)
     {
-        _items[item.Id] = item;
+        if (item != null)
+            _items[item.Id] = item;
         return Task.CompletedTask;
     }
 
@@ -235,5 +231,10 @@ public class MockItemRepository : IItemRepositoryPort
     {
         _items.Remove(id);
         return Task.CompletedTask;
+    }
+
+    public Task<bool> ExistsAsync(string id)
+    {
+        return Task.FromResult(_items.ContainsKey(id));
     }
 }
