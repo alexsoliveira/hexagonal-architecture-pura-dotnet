@@ -1,8 +1,12 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/HexagonalLab.API/HexagonalLab.API.csproj" />
     <Project Path="src/HexagonalLab.Core/HexagonalLab.Core.csproj" />
+    <Project Path="src/HexagonalLab.Infrastructure/HexagonalLab.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/HexagonalLab.API.Tests/HexagonalLab.API.Tests.csproj" />
     <Project Path="tests/HexagonalLab.Core.Tests/HexagonalLab.Core.Tests.csproj" />
+    <Project Path="tests/HexagonalLab.Infrastructure.Tests/HexagonalLab.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>
