@@ -110,6 +110,23 @@ if (-not (Test-Path $ComposeFile)) {
 }
 Write-Success "Found docker-compose.yml"
 
+# Check environment configuration
+$EnvFile = Join-Path $RootPath ".env"
+$EnvDockerFile = Join-Path $RootPath ".env.docker"
+$EnvExemploFile = Join-Path $RootPath "env.exemplo"
+
+if (-not (Test-Path $EnvFile)) {
+    Write-Warn ".env not found - required for configuration"
+} else {
+    Write-Success "Found .env configuration"
+}
+
+if (-not (Test-Path $EnvDockerFile)) {
+    Write-Warn ".env.docker not found - will be needed for docker-compose startup"
+} else {
+    Write-Success "Found .env.docker"
+}
+
 # ==============================================================================
 # STEP 2: Display Cleanup Configuration
 # ==============================================================================
@@ -148,22 +165,40 @@ if (-not $RemoveVolumes) {
     $SrcPath = Join-Path $RootPath "src"
     $TestsPath = Join-Path $RootPath "tests"
     
-    $DirsToClean = @(
-        (Join-Path $SrcPath "HexagonalLab.API"),
-        (Join-Path $SrcPath "HexagonalLab.Core"),
-        (Join-Path $SrcPath "HexagonalLab.Infrastructure"),
-        (Join-Path $SrcPath "HexagonalLab.Worker"),
-        $TestsPath
+    $ProjectsToClean = @(
+        @{ Name = "HexagonalLab.API"; Path = (Join-Path $SrcPath "HexagonalLab.API") },
+        @{ Name = "HexagonalLab.Core"; Path = (Join-Path $SrcPath "HexagonalLab.Core") },
+        @{ Name = "HexagonalLab.Infrastructure"; Path = (Join-Path $SrcPath "HexagonalLab.Infrastructure") },
+        @{ Name = "HexagonalLab.Worker"; Path = (Join-Path $SrcPath "HexagonalLab.Worker") }
     )
     
     $RemovedCount = 0
-    foreach ($Dir in $DirsToClean) {
-        if (Test-Path $Dir) {
-            $BinObj = @(Get-ChildItem -Path $Dir -Include "bin", "obj" -Recurse -Directory -ErrorAction SilentlyContinue)
-            foreach ($Item in $BinObj) {
-                Remove-Item -Path $Item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($Project in $ProjectsToClean) {
+        if (Test-Path $Project.Path) {
+            $BinPath = Join-Path $Project.Path "bin"
+            $ObjPath = Join-Path $Project.Path "obj"
+            
+            if (Test-Path $BinPath) {
+                Remove-Item -Path $BinPath -Recurse -Force -ErrorAction SilentlyContinue
                 $RemovedCount++
+                Write-Info "  Removed: $($Project.Name)\bin"
             }
+            
+            if (Test-Path $ObjPath) {
+                Remove-Item -Path $ObjPath -Recurse -Force -ErrorAction SilentlyContinue
+                $RemovedCount++
+                Write-Info "  Removed: $($Project.Name)\obj"
+            }
+        }
+    }
+    
+    # Clean test projects
+    if (Test-Path $TestsPath) {
+        $TestBinObj = @(Get-ChildItem -Path $TestsPath -Include "bin", "obj" -Recurse -Directory -ErrorAction SilentlyContinue)
+        foreach ($Item in $TestBinObj) {
+            Remove-Item -Path $Item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            $RemovedCount++
+            Write-Info "  Removed: $($Item.FullName | Resolve-Path -Relative)"
         }
     }
     
@@ -178,7 +213,26 @@ if (-not $RemoveVolumes) {
 # STEP 4: Check Current Resources
 # ==============================================================================
 
-Write-Header "Step 4: Checking Current Resources"
+Write-Header "Step 4: Configuration Status"
+
+Write-Info "Environment Files:"
+
+$EnvFile = Join-Path $RootPath ".env"
+if (Test-Path $EnvFile) {
+    Write-Host "  [X] .env exists" -ForegroundColor Green
+} else {
+    Write-Host "  [ ] .env missing (template available: env.exemplo)" -ForegroundColor Gray
+}
+
+$EnvDockerFile = Join-Path $RootPath ".env.docker"
+if (Test-Path $EnvDockerFile) {
+    Write-Host "  [X] .env.docker exists" -ForegroundColor Green
+} else {
+    Write-Host "  [ ] .env.docker missing (needed for docker-compose)" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Header "Step 5: Checking Current Resources"
 
 $ContainerCount = @(docker ps -a --filter "name=$script:HexagonalPrefix*" --format "{{.Names}}" 2>$null).Count
 $ImageCount = @(docker images | Select-String -Pattern $script:HexagonalPrefix | Measure-Object).Count
@@ -194,7 +248,7 @@ Write-Host "  Images:     $ImageCount" -ForegroundColor Gray
 Write-Host ""
 
 # ==============================================================================
-# STEP 5: User Confirmation (if removing data)
+# STEP 5A: User Confirmation (if removing data)
 # ==============================================================================
 
 if (($RemoveVolumes -or $RemoveImages) -and -not $Force) {
@@ -371,28 +425,49 @@ if ($RemainingImages -eq 0) {
 
 Write-Header "Cleanup Summary"
 
-Write-Host "Removed:" -ForegroundColor Magenta
-Write-Host "  [X] Containers" -ForegroundColor Green
+Write-Host "Cleanup Actions Performed:" -ForegroundColor Magenta
+Write-Host "  [X] Docker containers stopped and removed" -ForegroundColor Green
 
 if ($RemoveVolumes) {
-    Write-Host "  [X] Networks (REMOVED)" -ForegroundColor Red
-    Write-Host "  [X] Data volumes (DATA DELETED)" -ForegroundColor Red
-    Write-Host "  [X] Docker images (REMOVED)" -ForegroundColor Red
+    Write-Host "  [X] Docker networks removed" -ForegroundColor Red
+    Write-Host "  [X] Data volumes deleted (DATA LOST)" -ForegroundColor Red
+    Write-Host "  [X] .NET build artifacts cleaned (bin/obj)" -ForegroundColor Red
 } else {
-    Write-Host "  [ ] Networks (preserved)" -ForegroundColor Gray
-    Write-Host "  [ ] Data volumes (preserved)" -ForegroundColor Gray
-    Write-Host "  [ ] Docker images (cached)" -ForegroundColor Gray
+    Write-Host "  [ ] Docker networks preserved" -ForegroundColor Gray
+    Write-Host "  [ ] Data volumes preserved" -ForegroundColor Gray
+    Write-Host "  [ ] .NET build artifacts not cleaned" -ForegroundColor Gray
+}
+
+if ($RemoveImages) {
+    Write-Host "  [X] Docker images removed" -ForegroundColor Red
+} else {
+    Write-Host "  [ ] Docker images cached (reused on startup)" -ForegroundColor Gray
 }
 
 Write-Host ""
-Write-Host "Next Steps:" -ForegroundColor Cyan
-Write-Host "  To start the environment again:" -ForegroundColor Cyan
-Write-Host "  ./scripts/ambiente/startup.ps1" -ForegroundColor Gray
+Write-Host "❌ Environment Status:" -ForegroundColor Yellow
+Write-Host "  IMPORTANT: Before restarting, ensure:" -ForegroundColor Cyan
+
+$EnvFile = Join-Path $RootPath ".env"
+$EnvDockerFile = Join-Path $RootPath ".env.docker"
+
+if (-not (Test-Path $EnvDockerFile) -and (Test-Path $EnvFile)) {
+    Write-Host "  [ ] Create .env.docker from .env template" -ForegroundColor Red
+    Write-Host "      Command: Copy-Item .env -Destination .env.docker" -ForegroundColor Gray
+} else {
+    Write-Host "  [X] .env.docker is ready" -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host "🚀 Next Steps:" -ForegroundColor Cyan
+Write-Host "  1. (Optional) Create .env.docker if not present" -ForegroundColor Cyan
+Write-Host "  2. Start the environment with:" -ForegroundColor Cyan
+Write-Host "     ./scripts/ambiente/startup.ps1" -ForegroundColor Gray
 
 if ($RemoveImages) {
-    Write-Host "  (Images will be rebuilt from Dockerfiles)" -ForegroundColor Gray
+    Write-Host "     (New images will be built from Dockerfiles)" -ForegroundColor Gray
 } else {
-    Write-Host "  (Cached images will be reused for faster startup)" -ForegroundColor Gray
+    Write-Host "     (Cached images will be reused for faster startup)" -ForegroundColor Gray
 }
 
 Write-Host ""

@@ -86,7 +86,36 @@ if ($Status -ne "healthy") {
     Write-Host "WARNING: SQL Server status inconclusive (may still be starting)" -ForegroundColor Yellow
 }
 
+# Step 4b: Apply Database Migrations
+Write-Host ""
+Write-Host "[STEP 4b] Applying Database Migrations..." -ForegroundColor Cyan
+
 Pop-Location
+
+$env:ConnectionStrings__DefaultConnection = "Server=localhost,1433;Database=HexagonalLab;User Id=sa;Password=HexagonalLab@2024!;TrustServerCertificate=true;"
+
+try {
+    Write-Host "Running: dotnet ef database update" -ForegroundColor Yellow
+    Write-Host ""
+    
+    Push-Location $RootPath
+    
+    dotnet ef database update --project src/HexagonalLab.Infrastructure --startup-project src/HexagonalLab.API --no-build 2>&1 | Where-Object { $_ -match "(No migrations|successfully|error)" } | ForEach-Object {
+        Write-Host "  $_" -ForegroundColor Gray
+    }
+    
+    Pop-Location
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "OK: Migrations applied successfully" -ForegroundColor Green
+    } else {
+        Write-Host "WARNING: Migrations may require manual update. Run manually:" -ForegroundColor Yellow
+        Write-Host "  dotnet ef database update --project src/HexagonalLab.Infrastructure --startup-project src/HexagonalLab.API" -ForegroundColor Gray
+    }
+} catch {
+    Write-Host "WARNING: Could not apply migrations: $_" -ForegroundColor Yellow
+    Write-Host "This may require manual intervention." -ForegroundColor Yellow
+}
 
 # Step 5: Display Status
 Write-Host ""
