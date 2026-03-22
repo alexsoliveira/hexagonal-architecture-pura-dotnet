@@ -56,9 +56,7 @@ var builder = Host.CreateDefaultBuilder(args)
                 {
                     // ✅ Retry strategy for transient SQL Server errors
                     sqlOptions.EnableRetryOnFailure(
-                        maxRetryCount: 5,
-                        maxRetryDelaySeconds: 30,
-                        errorNumbersToAdd: null
+                        maxRetryCount: 5
                     );
                     
                     // ✅ Increase command timeout from default 30s to 300s (5 minutes)
