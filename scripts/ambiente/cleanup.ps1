@@ -77,6 +77,13 @@ function Get-DockerCompose {
 }
 
 # ==============================================================================
+# STEP 0: Clean Build Artifacts (Optional)
+# ==============================================================================
+
+# Add .NET build cleanup parameter
+$CleanBuild = $PSBoundParameters.ContainsKey('RemoveVolumes') -and $RemoveVolumes
+
+# ==============================================================================
 # STEP 1: Validate Prerequisites
 # ==============================================================================
 
@@ -128,10 +135,50 @@ if ($RemoveImages) {
 Write-Host ""
 
 # ==============================================================================
-# STEP 3: Check Current Resources
+# STEP 3: Clean .NET Build Artifacts (Optional)
 # ==============================================================================
 
-Write-Header "Step 3: Checking Current Resources"
+Write-Header "Step 3: .NET Build Artifacts"
+
+if (-not $RemoveVolumes) {
+    Write-Info "Use -RemoveVolumes flag to also clean .NET build artifacts"
+} else {
+    Write-Warn "Cleaning .NET build artifacts (bin/obj directories)..."
+    
+    $SrcPath = Join-Path $RootPath "src"
+    $TestsPath = Join-Path $RootPath "tests"
+    
+    $DirsToClean = @(
+        (Join-Path $SrcPath "HexagonalLab.API"),
+        (Join-Path $SrcPath "HexagonalLab.Core"),
+        (Join-Path $SrcPath "HexagonalLab.Infrastructure"),
+        (Join-Path $SrcPath "HexagonalLab.Worker"),
+        $TestsPath
+    )
+    
+    $RemovedCount = 0
+    foreach ($Dir in $DirsToClean) {
+        if (Test-Path $Dir) {
+            $BinObj = @(Get-ChildItem -Path $Dir -Include "bin", "obj" -Recurse -Directory -ErrorAction SilentlyContinue)
+            foreach ($Item in $BinObj) {
+                Remove-Item -Path $Item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                $RemovedCount++
+            }
+        }
+    }
+    
+    if ($RemovedCount -gt 0) {
+        Write-Success "Removed $RemovedCount build artifact directories"
+    } else {
+        Write-Info "No build artifacts found to remove"
+    }
+}
+
+# ==============================================================================
+# STEP 4: Check Current Resources
+# ==============================================================================
+
+Write-Header "Step 4: Checking Current Resources"
 
 $ContainerCount = @(docker ps -a --filter "name=$script:HexagonalPrefix*" --format "{{.Names}}" 2>$null).Count
 $ImageCount = @(docker images | Select-String -Pattern $script:HexagonalPrefix | Measure-Object).Count
@@ -147,7 +194,7 @@ Write-Host "  Images:     $ImageCount" -ForegroundColor Gray
 Write-Host ""
 
 # ==============================================================================
-# STEP 4: User Confirmation (if removing data)
+# STEP 5: User Confirmation (if removing data)
 # ==============================================================================
 
 if (($RemoveVolumes -or $RemoveImages) -and -not $Force) {
@@ -163,14 +210,14 @@ if (($RemoveVolumes -or $RemoveImages) -and -not $Force) {
 }
 
 # ==============================================================================
-# STEP 5: Stop and Remove Containers
+# STEP 6: Stop and Remove Containers
 # ==============================================================================
 
-Write-Header "Step 5: Stopping and Removing Containers"
+Write-Header "Step 6: Stopping and Removing Containers"
 
 Push-Location $RootPath
 
-$Cmd = "down"
+$Cmd = "down --remove-orphans"
 if ($RemoveVolumes) {
     $Cmd += " -v"
 }
@@ -186,29 +233,39 @@ Write-Host ""
 if ($ExitCode -eq 0) {
     Write-Success "Docker Compose cleanup completed"
 } else {
-    Write-Error-Custom "Docker Compose cleanup failed with exit code: $ExitCode"
-    Pop-Location
-    exit 1
+    Write-Warn "Docker Compose cleanup returned warning (exit code: $ExitCode), continuing with manual cleanup..."
+    Write-Info "Attempting manual Docker cleanup..."
+    
+    # Fallback: manual cleanup
+    $Containers = docker ps -a --format "table {{.ID}}\t{{.Names}}" | Select-Object -Skip 1
+    if ($Containers) {
+        foreach ($Container in $Containers) {
+            $ContainerId = ($Container -split '\s+')[0]
+            if ($ContainerId) {
+                docker stop $ContainerId 2>$null
+                docker rm $ContainerId 2>$null
+            }
+        }
+        Write-Success "Manual container cleanup completed"
+    }
 }
 
 # ==============================================================================
-# STEP 6: Remove Images (Optional)
+# STEP 7: Remove Images (Optional)
 # ==============================================================================
 
 if ($RemoveImages) {
-    Write-Header "Step 6: Removing Docker Images"
+    Write-Header "Step 7: Removing Docker Images"
 
-    $ImagesToRemove = docker images | Select-String -Pattern $script:HexagonalPrefix | ForEach-Object {
-        $fields = $_ -split '\s+' | Where-Object { $_ }
-        "$($fields[0]):$($fields[1])"
-    }
+    $ImagesToRemove = @(docker images --format "{{.Repository}}:{{.Tag}}" | Select-String -Pattern $script:HexagonalPrefix)
 
-    if ($ImagesToRemove) {
+    if ($ImagesToRemove.Count -gt 0) {
         Write-Info "Removing $($ImagesToRemove.Count) image(s):"
         
         foreach ($Image in $ImagesToRemove) {
-            Write-Host "  - $Image" -ForegroundColor Yellow
-            docker rmi $Image 2>$null
+            $ImageName = $Image.ToString().Trim()
+            Write-Host "  - $ImageName" -ForegroundColor Yellow
+            docker rmi -f $ImageName 2>$null
         }
         
         Write-Success "Docker images removed"
@@ -216,17 +273,68 @@ if ($RemoveImages) {
         Write-Info "No HexagonalLab images found to remove"
     }
 } else {
-    Write-Header "Step 6: Skipping Image Removal"
+    Write-Header "Step 7: Skipping Image Removal"
     Write-Info "Use -RemoveImages flag to remove Docker images"
+}
+
+# ==============================================================================
+# STEP 7A: Remove Volumes (Optional)
+# ==============================================================================
+
+if ($RemoveVolumes) {
+    Write-Header "Step 7A: Removing Docker Volumes"
+
+    $VolumesToRemove = @(docker volume ls --format "{{.Name}}" | Select-String -Pattern $script:HexagonalPrefix)
+
+    if ($VolumesToRemove.Count -gt 0) {
+        Write-Info "Removing $($VolumesToRemove.Count) volume(s):"
+        
+        foreach ($Volume in $VolumesToRemove) {
+            $VolumeName = $Volume.ToString().Trim()
+            Write-Host "  - $VolumeName" -ForegroundColor Yellow
+            docker volume rm -f $VolumeName 2>$null
+        }
+        
+        Write-Success "Docker volumes removed"
+    } else {
+        Write-Info "No HexagonalLab volumes found to remove"
+    }
+} else {
+    Write-Header "Step 7A: Skipping Volume Removal"
+    Write-Info "Use -RemoveVolumes flag to remove Docker volumes"
+}
+
+# ==============================================================================
+# STEP 8: Remove Networks (Optional)
+# ==============================================================================
+
+if ($RemoveVolumes) {
+    Write-Header "Step 8: Removing Docker Networks"
+
+    $NetworksToRemove = @(docker network ls --format "{{.Name}}" | Select-String -Pattern $script:HexagonalPrefix)
+
+    if ($NetworksToRemove.Count -gt 0) {
+        Write-Info "Removing $($NetworksToRemove.Count) network(s):"
+        
+        foreach ($Network in $NetworksToRemove) {
+            $NetworkName = $Network.ToString().Trim()
+            Write-Host "  - $NetworkName" -ForegroundColor Yellow
+            docker network rm $NetworkName 2>$null
+        }
+        
+        Write-Success "Docker networks removed"
+    } else {
+        Write-Info "No HexagonalLab networks found to remove"
+    }
 }
 
 Pop-Location
 
 # ==============================================================================
-# STEP 7: Verify Cleanup
+# STEP 9: Verify Cleanup
 # ==============================================================================
 
-Write-Header "Step 7: Verifying Cleanup"
+Write-Header "Step 9: Verifying Cleanup"
 
 $RemainingContainers = @(docker ps -a --filter "name=$script:HexagonalPrefix*" --format "{{.Names}}" 2>$null)
 $RemainingNetworks = @(docker network ls | Select-String -Pattern $script:HexagonalPrefix | Measure-Object).Count
@@ -258,23 +366,21 @@ if ($RemainingImages -eq 0) {
 }
 
 # ==============================================================================
-# STEP 8: Cleanup Summary
+# STEP 10: Cleanup Summary
 # ==============================================================================
 
 Write-Header "Cleanup Summary"
 
 Write-Host "Removed:" -ForegroundColor Magenta
-Write-Host "  [X] Containers and networks" -ForegroundColor Green
+Write-Host "  [X] Containers" -ForegroundColor Green
 
 if ($RemoveVolumes) {
+    Write-Host "  [X] Networks (REMOVED)" -ForegroundColor Red
     Write-Host "  [X] Data volumes (DATA DELETED)" -ForegroundColor Red
+    Write-Host "  [X] Docker images (REMOVED)" -ForegroundColor Red
 } else {
+    Write-Host "  [ ] Networks (preserved)" -ForegroundColor Gray
     Write-Host "  [ ] Data volumes (preserved)" -ForegroundColor Gray
-}
-
-if ($RemoveImages) {
-    Write-Host "  [X] Docker images" -ForegroundColor Red
-} else {
     Write-Host "  [ ] Docker images (cached)" -ForegroundColor Gray
 }
 
