@@ -20,18 +20,16 @@ using Microsoft.EntityFrameworkCore;
 // ========================================================================
 
 var builder = Host.CreateDefaultBuilder(args)
+    .ConfigureLogging(logging =>
+    {
+        logging.ClearProviders();
+        logging.AddConsole();
+        logging.SetMinimumLevel(LogLevel.Information);
+    })
     .ConfigureServices((context, services) =>
     {
         // ─────────────────────────────────────────────────────────────────
-        // 1. Add Logging
-        // ─────────────────────────────────────────────────────────────────
-        services.AddLogging(config =>
-        {
-            config.AddConsole();
-        });
-
-        // ─────────────────────────────────────────────────────────────────
-        // 2. Register Core UseCases (Input Ports)
+        // 1. Register Core UseCases (Input Ports)
         // ─────────────────────────────────────────────────────────────────
         // Worker Adapter = SEGUNDA entrada (Input Adapter #2)
         // API (Phase 3) era a primeira entrada
@@ -43,9 +41,11 @@ var builder = Host.CreateDefaultBuilder(args)
         // ─────────────────────────────────────────────────────────────────
 
         services.AddScoped<IItemInputPort, ProcessItemUseCase>();  // ✅ Worker PROCESSA itens, não apenas lê
-        services.AddScoped<IGetAllItemsInputPort, GetAllItemsUseCase>();        services.AddScoped<IUpdateItemStatusInputPort, UpdateItemStatusUseCase>();  // ✅ Worker PERSISTE status
+        services.AddScoped<IGetAllItemsInputPort, GetAllItemsUseCase>();
+        services.AddScoped<IUpdateItemStatusInputPort, UpdateItemStatusUseCase>();  // ✅ Worker PERSISTE status
+        
         // ─────────────────────────────────────────────────────────────────
-        // 3. Register Output Port Adapters (Real Database)
+        // 2. Register Output Port Adapters (Real Database)
         // ─────────────────────────────────────────────────────────────────
         // Phase 3-5: EF Core adapter (banco de dados real)
         // ─────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddScoped<IItemRepositoryPort, EfCoreRepositoryAdapter>();
 
         // ─────────────────────────────────────────────────────────────────
-        // 4. Register BackgroundService (Worker)
+        // 3. Register BackgroundService (Worker)
         // ─────────────────────────────────────────────────────────────────
         services.AddHostedService<ItemProcessingWorker>();
     });

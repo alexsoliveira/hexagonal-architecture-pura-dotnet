@@ -116,18 +116,21 @@ $env:ConnectionStrings__DefaultConnection = "Server=localhost,1433;Database=Hexa
 try {
     Write-Host "Running: dotnet ef database update" -ForegroundColor Yellow
     
-    dotnet ef database update `
+    $MigrationOutput = dotnet ef database update `
         --project src/HexagonalLab.Infrastructure `
-        --startup-project src/HexagonalLab.API `
-        --verbose 2>&1 | Where-Object { $_ -match "(migration|Migration|Applied|error|Error)" } | ForEach-Object {
-        Write-Host "  $_" -ForegroundColor Gray
-    }
+        --startup-project src/HexagonalLab.API 2>&1
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "OK: Database migrations applied successfully" -ForegroundColor Green
+        
+        # Show migration results
+        $MigrationOutput | Where-Object { $_ -match "(applied|Applied|up to date|migration)" } | ForEach-Object {
+            Write-Host "  $_" -ForegroundColor Gray
+        }
     } else {
-        Write-Host "WARNING: Migrations completed with code $LASTEXITCODE" -ForegroundColor Yellow
-        Write-Host "INFO: If database is ready, this may be normal" -ForegroundColor Cyan
+        Write-Host "ERROR: Migration failed with code $LASTEXITCODE" -ForegroundColor Red
+        Write-Host "Output:" -ForegroundColor Yellow
+        $MigrationOutput | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
     }
 } catch {
     Write-Host "ERROR: Could not apply migrations: $_" -ForegroundColor Red

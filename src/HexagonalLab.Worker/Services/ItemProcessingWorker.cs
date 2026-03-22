@@ -54,12 +54,12 @@ public class ItemProcessingWorker : BackgroundService
         _logger.LogInformation("→ Same Output Port (Database)");
         _logger.LogInformation("→ ZERO changes to Core! 🎉");
 
-        // Timer: a cada 30 segundos, processa itens pendentes
+        // Timer: inicia após 10 segundos (aguarda migrations), depois processa a cada 30 segundos
         _timer = new Timer(
             async _ => await DoWork(cancellationToken),
             null,
-            TimeSpan.Zero,                  // Inicia imediatamente
-            TimeSpan.FromSeconds(30));      // Repete a cada 30s
+            TimeSpan.FromSeconds(10),          // Delay inicial de 10s para garantir que migrations estão prontas
+            TimeSpan.FromSeconds(30));         // Repete a cada 30s
 
         await base.StartAsync(cancellationToken);
     }
@@ -149,7 +149,14 @@ public class ItemProcessingWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Unexpected error in DoWork");
+            if (ex.InnerException?.Message?.Contains("Invalid object name 'Items'") == true)
+            {
+                _logger.LogError("❌ Database schema not ready yet. Tables may still be migrating. Retrying in next cycle...");
+            }
+            else
+            {
+                _logger.LogError(ex, "❌ Unexpected error in DoWork");
+            }
         }
     }
 

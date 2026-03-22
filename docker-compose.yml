@@ -69,6 +69,8 @@ services:
     depends_on:
       sqlserver:
         condition: service_healthy
+      api:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Development}"
       ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=${DB_NAME:-HexagonalLab};User Id=sa;Password=${DB_PASSWORD:-HexagonalLab@2024!};TrustServerCertificate=true;"
