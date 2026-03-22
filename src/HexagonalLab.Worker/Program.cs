@@ -49,7 +49,23 @@ var builder = Host.CreateDefaultBuilder(args)
         var connectionString = context.Configuration.GetConnectionString("DefaultConnection");
         
         services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlServer(connectionString));
+        {
+            options.UseSqlServer(
+                connectionString,
+                sqlOptions =>
+                {
+                    // ✅ Retry strategy for transient SQL Server errors
+                    sqlOptions.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelaySeconds: 30,
+                        errorNumbersToAdd: null
+                    );
+                    
+                    // ✅ Increase command timeout from default 30s to 300s (5 minutes)
+                    sqlOptions.CommandTimeout(300);
+                }
+            );
+        });
 
         services.AddScoped<IItemRepositoryPort, EfCoreRepositoryAdapter>();
 

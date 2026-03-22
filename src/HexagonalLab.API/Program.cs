@@ -44,7 +44,23 @@ builder.Services.AddScoped<IItemInputPort, GetItemUseCase>();
 
 // PHASE 4: Configure Database & EF Core Adapter
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions =>
+        {
+            // ✅ Retry strategy for transient SQL Server errors
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelaySeconds: 30,
+                errorNumbersToAdd: null
+            );
+            
+            // ✅ Increase command timeout from default 30s to 300s (5 minutes)
+            sqlOptions.CommandTimeout(300);
+        }
+    );
+});
 
 // PHASE 7: Add Memory Cache + Decorator Pattern
 builder.Services.AddMemoryCache();
