@@ -36,10 +36,14 @@ var builder = Host.CreateDefaultBuilder(args)
         // Worker Adapter = SEGUNDA entrada (Input Adapter #2)
         // API (Phase 3) era a primeira entrada
         // Core é AGNÓSTICO de qual adapter está usando!
+        // 
+        // PLUGABILIDADE: Worker pode PROCESSAR (ProcessItemUseCase)
+        // ou OBTER (GetItemUseCase) dependendo da necessidade!
+        // Aqui escolhemos PROCESSAR (ProcessItemUseCase) para demonstrar
         // ─────────────────────────────────────────────────────────────────
 
-        services.AddScoped<IItemInputPort, GetItemUseCase>();
-
+        services.AddScoped<IItemInputPort, ProcessItemUseCase>();  // ✅ Worker PROCESSA itens, não apenas lê
+        services.AddScoped<IGetAllItemsInputPort, GetAllItemsUseCase>();        services.AddScoped<IUpdateItemStatusInputPort, UpdateItemStatusUseCase>();  // ✅ Worker PERSISTE status
         // ─────────────────────────────────────────────────────────────────
         // 3. Register Output Port Adapters (Real Database)
         // ─────────────────────────────────────────────────────────────────

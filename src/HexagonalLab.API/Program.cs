@@ -34,6 +34,7 @@ builder.Services.AddCors(options =>
 // ─────────────────────────────────────────────────────────────────
 
 builder.Services.AddScoped<IItemInputPort, GetItemUseCase>();
+builder.Services.AddScoped<IGetAllItemsInputPort, GetAllItemsUseCase>();
 
 // ─────────────────────────────────────────────────────────────────
 // 3. Register Output Port Adapters
@@ -43,22 +44,27 @@ builder.Services.AddScoped<IItemInputPort, GetItemUseCase>();
 // ─────────────────────────────────────────────────────────────────
 
 // PHASE 4: Configure Database & EF Core Adapter
-builder.Services.AddDbContext<AppDbContext>(options =>
+// NOTE: WebApplicationFactory for tests will override this via ConfigureWebHost
+// Only register SqlServer if NOT in Test environment (to avoid provider conflicts)
+if (!builder.Environment.IsEnvironment("Test"))
 {
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions =>
-        {
-            // ✅ Retry strategy for transient SQL Server errors
-            sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 5
-            );
-            
-            // ✅ Increase command timeout from default 30s to 300s (5 minutes)
-            sqlOptions.CommandTimeout(300);
-        }
-    );
-});
+    builder.Services.AddDbContext<AppDbContext>(options =>
+    {
+        options.UseSqlServer(
+            builder.Configuration.GetConnectionString("DefaultConnection"),
+            sqlOptions =>
+            {
+                // ✅ Retry strategy for transient SQL Server errors
+                sqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5
+                );
+                
+                // ✅ Increase command timeout from default 30s to 300s (5 minutes)
+                sqlOptions.CommandTimeout(300);
+            }
+        );
+    });
+}
 
 // PHASE 7: Add Memory Cache + Decorator Pattern
 builder.Services.AddMemoryCache();
@@ -68,13 +74,17 @@ builder.Services.AddScoped<EfCoreRepositoryAdapter>();
 
 // Register with Decorator (Cached wrapper)
 // PADRÃO CRÍTICO: Mesmo que DI mude, Core não muda!
-builder.Services.AddScoped<IItemRepositoryPort>(serviceProvider =>
-    new CachedRepositoryAdapter(
-        serviceProvider.GetRequiredService<EfCoreRepositoryAdapter>(),
-        serviceProvider.GetRequiredService<IMemoryCache>(),
-        TimeSpan.FromMinutes(5)  // Cache duration
-    )
-);
+// 🔧 TEMPORARILY DISABLED FOR TESTING - uncomment to enable cache
+// builder.Services.AddScoped<IItemRepositoryPort>(serviceProvider =>
+//     new CachedRepositoryAdapter(
+//         serviceProvider.GetRequiredService<EfCoreRepositoryAdapter>(),
+//         serviceProvider.GetRequiredService<IMemoryCache>(),
+//         TimeSpan.FromMinutes(5)  // Cache duration
+//     )
+// );
+
+// 🔧 DIRECT ADAPTER (no cache) - for immediate testing
+builder.Services.AddScoped<IItemRepositoryPort, EfCoreRepositoryAdapter>();
 
 // ─────────────────────────────────────────────────────────────────
 // 4. Build App
@@ -85,10 +95,14 @@ var app = builder.Build();
 // ─────────────────────────────────────────────────────────────────
 // Database Initialization
 // ─────────────────────────────────────────────────────────────────
-using (var scope = app.Services.CreateScope())
+// Only initialize if NOT in Test environment (tests handle DB init separately)
+if (!app.Environment.IsEnvironment("Test"))
 {
-    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await context.Database.MigrateAsync();  // Apply pending migrations
+    using (var scope = app.Services.CreateScope())
+    {
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await context.Database.MigrateAsync();  // Apply pending migrations (SQL Server)
+    }
 }
 
 if (app.Environment.IsDevelopment())

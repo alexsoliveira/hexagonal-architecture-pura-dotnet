@@ -1,6 +1,7 @@
 namespace HexagonalLab.API.Tests.Fixtures;
 
 using HexagonalLab.Infrastructure.Data;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 /// Custom WebApplicationFactory para E2E tests.
 /// Configura API com EF Core usando SQLite em memória para testes.
 /// 
+/// FIX: Sets test environment BEFORE host is created, then overrides database provider
 /// MUDANÇA Phase 4:
 /// - Antes: In-Memory adapter fake
 /// - Agora: Real EF Core adapter com SQLite (testa comportamento real)
@@ -17,17 +19,30 @@ public class ItemApiWebApplicationFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Set test environment so Program.cs can detect it
+        builder.UseEnvironment("Test");
+
         builder.ConfigureServices(services =>
         {
-            // Remove o AppDbContext real (SQL Server)
-            var dbContextDescriptor = services.FirstOrDefault(
-                d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
-            if (dbContextDescriptor != null)
-                services.Remove(dbContextDescriptor);
+            // Remove ALL DbContext and DbContextOptions registrations to prevent provider conflicts
+            var descriptorsToRemove = services
+                .Where(d => 
+                    d.ServiceType == typeof(DbContextOptions<AppDbContext>) ||
+                    d.ServiceType == typeof(AppDbContext) ||
+                    (d.ServiceType?.IsGenericType == true && 
+                     d.ServiceType.GetGenericTypeDefinition() == typeof(DbContextOptions<>)))
+                .ToList();
 
-            // Adicionar DbContext com SQLite em memória para testes
+            foreach (var descriptor in descriptorsToRemove)
+            {
+                services.Remove(descriptor);
+            }
+
+            // Adicionar DbContext com SQLite em memória para testes APENAS
+            // This prevents SqlServer provider from being registered
             services.AddDbContext<AppDbContext>(options =>
-                options.UseSqlite("Data Source=:memory:"));
+                options.UseSqlite("Data Source=:memory:"), 
+                ServiceLifetime.Scoped);
         });
 
         builder.UseContentRoot(Directory.GetCurrentDirectory());

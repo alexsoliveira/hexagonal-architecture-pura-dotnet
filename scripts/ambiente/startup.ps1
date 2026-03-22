@@ -86,43 +86,71 @@ if ($Status -ne "healthy") {
     Write-Host "WARNING: SQL Server status inconclusive (may still be starting)" -ForegroundColor Yellow
 }
 
-# Step 4b: Apply Database Migrations
+# Step 4b: Restore NuGet Dependencies
 Write-Host ""
-Write-Host "[STEP 4b] Applying Database Migrations..." -ForegroundColor Cyan
+Write-Host "[STEP 4b] Restoring NuGet Dependencies..." -ForegroundColor Cyan
 
 Pop-Location
+
+Push-Location $RootPath
+
+try {
+    Write-Host "Running: dotnet restore" -ForegroundColor Yellow
+    dotnet restore | Out-Null
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "OK: Dependencies restored successfully" -ForegroundColor Green
+    } else {
+        Write-Host "WARNING: dotnet restore returned code $LASTEXITCODE" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "WARNING: Could not restore dependencies: $_" -ForegroundColor Yellow
+}
+
+# Step 4c: Apply Database Migrations
+Write-Host ""
+Write-Host "[STEP 4c] Applying Database Migrations..." -ForegroundColor Cyan
 
 $env:ConnectionStrings__DefaultConnection = "Server=localhost,1433;Database=HexagonalLab;User Id=sa;Password=HexagonalLab@2024!;TrustServerCertificate=true;"
 
 try {
     Write-Host "Running: dotnet ef database update" -ForegroundColor Yellow
-    Write-Host ""
     
-    Push-Location $RootPath
-    
-    dotnet ef database update --project src/HexagonalLab.Infrastructure --startup-project src/HexagonalLab.API --no-build 2>&1 | Where-Object { $_ -match "(No migrations|successfully|error)" } | ForEach-Object {
+    dotnet ef database update `
+        --project src/HexagonalLab.Infrastructure `
+        --startup-project src/HexagonalLab.API `
+        --verbose 2>&1 | Where-Object { $_ -match "(migration|Migration|Applied|error|Error)" } | ForEach-Object {
         Write-Host "  $_" -ForegroundColor Gray
     }
     
-    Pop-Location
-    
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "OK: Migrations applied successfully" -ForegroundColor Green
+        Write-Host "OK: Database migrations applied successfully" -ForegroundColor Green
     } else {
-        Write-Host "WARNING: Migrations may require manual update. Run manually:" -ForegroundColor Yellow
-        Write-Host "  dotnet ef database update --project src/HexagonalLab.Infrastructure --startup-project src/HexagonalLab.API" -ForegroundColor Gray
+        Write-Host "WARNING: Migrations completed with code $LASTEXITCODE" -ForegroundColor Yellow
+        Write-Host "INFO: If database is ready, this may be normal" -ForegroundColor Cyan
     }
 } catch {
-    Write-Host "WARNING: Could not apply migrations: $_" -ForegroundColor Yellow
-    Write-Host "This may require manual intervention." -ForegroundColor Yellow
+    Write-Host "ERROR: Could not apply migrations: $_" -ForegroundColor Red
+    Write-Host "Run manually to diagnose:" -ForegroundColor Yellow
+    Write-Host "  cd $RootPath" -ForegroundColor Gray
+    Write-Host '  $env:ConnectionStrings__DefaultConnection = "Server=localhost,1433;Database=HexagonalLab;User Id=sa;Password=HexagonalLab@2024!;TrustServerCertificate=true;"' -ForegroundColor Gray
+    Write-Host "  dotnet ef database update --project src/HexagonalLab.Infrastructure --startup-project src/HexagonalLab.API --verbose" -ForegroundColor Gray
 }
+
+Pop-Location
 
 # Step 5: Display Status
 Write-Host ""
 Write-Host "[STEP 5] Container Status" -ForegroundColor Cyan
 Write-Host ""
 
-docker ps --filter "name=hexagonal*" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+$Containers = docker ps --filter "name=hexagonal*" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+Write-Host $Containers
+
+# Wait a bit more for services to be fully ready
+Write-Host ""
+Write-Host "Waiting for services to fully initialize..." -ForegroundColor Cyan
+Start-Sleep -Seconds 3
 
 # Step 6: Display URLs
 Write-Host ""
@@ -144,12 +172,28 @@ Write-Host ""
 # Step 7: Useful Commands
 Write-Host "[STEP 7] Useful Commands" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "View logs:        docker-compose logs -f api" -ForegroundColor Gray
-Write-Host "Stop services:    docker-compose down" -ForegroundColor Gray
-Write-Host "Stop & cleanup:   docker-compose down -v" -ForegroundColor Gray
+Write-Host "View logs:" -ForegroundColor Yellow
+Write-Host "  docker-compose logs -f api              # API logs" -ForegroundColor Gray
+Write-Host "  docker-compose logs -f worker           # Worker logs" -ForegroundColor Gray
+Write-Host "  docker-compose logs -f sqlserver        # SQL Server logs" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Manage services:" -ForegroundColor Yellow
+Write-Host "  docker-compose stop                     # Stop all services" -ForegroundColor Gray
+Write-Host "  docker-compose down                     # Stop and remove containers" -ForegroundColor Gray
+Write-Host "  docker-compose down -v                  # Stop and remove everything (including volumes)" -ForegroundColor Gray
+Write-Host "  docker-compose up -d --build -Rebuild   # Rebuild images (rebuild flag)" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Database:" -ForegroundColor Yellow
+Write-Host "  docker exec hexagonal-sqlserver bash    # Access SQL Server container" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Testing:" -ForegroundColor Yellow
+Write-Host "  Invoke-WebRequest http://localhost:5000/api/items/ -Method Get  # List items" -ForegroundColor Gray
+Write-Host ""
 Write-Host ""
 
 Write-Host "=====================================================" -ForegroundColor Cyan
 Write-Host "  Environment startup completed successfully!" -ForegroundColor Green
 Write-Host "=====================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "💡 TIP: Check logs with: docker-compose logs -f worker" -ForegroundColor Cyan
 Write-Host ""

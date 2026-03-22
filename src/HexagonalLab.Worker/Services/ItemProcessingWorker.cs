@@ -25,14 +25,20 @@ public class ItemProcessingWorker : BackgroundService
 {
     private readonly ILogger<ItemProcessingWorker> _logger;
     private readonly IItemInputPort _useCase;
+    private readonly IGetAllItemsInputPort _getAllUseCase;
+    private readonly IUpdateItemStatusInputPort _updateStatusUseCase;
     private Timer? _timer;
 
     public ItemProcessingWorker(
         ILogger<ItemProcessingWorker> logger,
-        IItemInputPort useCase)
+        IItemInputPort useCase,
+        IGetAllItemsInputPort getAllUseCase,
+        IUpdateItemStatusInputPort updateStatusUseCase)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _useCase = useCase ?? throw new ArgumentNullException(nameof(useCase));
+        _getAllUseCase = getAllUseCase ?? throw new ArgumentNullException(nameof(getAllUseCase));
+        _updateStatusUseCase = updateStatusUseCase ?? throw new ArgumentNullException(nameof(updateStatusUseCase));
     }
 
     /// <summary>
@@ -83,6 +89,8 @@ public class ItemProcessingWorker : BackgroundService
     /// 
     /// A única diferença: entrada é timer, não HTTP.
     /// Mas Core não sabe nem se importa!
+    /// 
+    /// MUDANÇA: Agora busca itens REAIS do banco em vez de hardcoded!
     /// </summary>
     private async Task DoWork(CancellationToken cancellationToken)
     {
@@ -90,34 +98,48 @@ public class ItemProcessingWorker : BackgroundService
         {
             _logger.LogInformation("Processing items at {time} ⚙️", DateTimeOffset.Now);
 
-            // Simular: pegar lista de itens pendentes
-            // Em produção: consultaria um banco ou fila
-            var itemsToProcess = new[] { "ITEM-001", "ITEM-002", "ITEM-003" };
+            // ✅ MUDANÇA: Buscar itens REAIS do banco usando GetAll UseCase
+            // Antes: var itemsToProcess = new[] { "ITEM-001", "ITEM-002", "ITEM-003" };  // ❌ Hardcoded
+            // Agora:
+            var allItems = await _getAllUseCase.GetAllAsync();
+            
+            if (!allItems.Any())
+            {
+                _logger.LogInformation("ℹ️ No items found in database to process");
+                return;
+            }
 
-            foreach (var itemId in itemsToProcess)
+            _logger.LogInformation("📊 Found {Count} items to process", allItems.Count());
+
+            foreach (var item in allItems)
             {
                 try
                 {
-                    // ✅ CHAMA INPUT PORT (IDENTICAMENTE COMO FA HTTP ENDPOINT!)
+                    // ✅ CHAMA INPUT PORT (IDENTICAMENTE COMO FAZ HTTP ENDPOINT!)
                     // Veja ItemEndpoints.cs para comparação
-                    var result = await _useCase.ProcessAsync(itemId);
+                    var result = await _useCase.ProcessAsync(item.Id);
 
                     if (result.Status == "Processed")
                     {
-                        _logger.LogInformation("✅ Item {ItemId} processed successfully", itemId);
+                        _logger.LogInformation("✅ Item {ItemId} ({Name}) processed successfully", item.Id, item.Name);
+                        
+                        // ✅ PERSISTE o novo status no banco de dados
+                        // Demonstra a plugabilidade: Worker chama 2 Input Ports
+                        var updateResult = await _updateStatusUseCase.UpdateStatusAsync(item.Id, "Processed");
+                        _logger.LogInformation("✅ Item {ItemId} status persisted: {Message}", item.Id, updateResult.Message);
                     }
                     else
                     {
-                        _logger.LogWarning("⚠️ Item {ItemId} returned status: {Status}", itemId, result.Status);
+                        _logger.LogWarning("⚠️ Item {ItemId} ({Name}) returned status: {Status}", item.Id, item.Name, result.Status);
                     }
                 }
                 catch (ArgumentException ex)
                 {
-                    _logger.LogWarning("⚠️ Validation error processing item {ItemId}: {Message}", itemId, ex.Message);
+                    _logger.LogWarning("⚠️ Validation error processing item {ItemId}: {Message}", item.Id, ex.Message);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "❌ Error processing item {ItemId}", itemId);
+                    _logger.LogError(ex, "❌ Error processing item {ItemId}", item.Id);
                 }
             }
         }

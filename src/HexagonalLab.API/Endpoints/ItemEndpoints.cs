@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Routing;
 /// 
 /// EXEMPLO:
 /// GET /api/items/{id}  →  IItemInputPort.ProcessAsync(id)
+/// GET /api/items      →  IGetAllItemsInputPort.GetAllAsync()
 /// 
 /// A MAGIA: Trocar Input Adapter (API → Worker) sem alterar Core!
 /// </summary>
@@ -85,10 +86,22 @@ public static class ItemEndpoints
 
     /// <summary>
     /// GET /api/items
-    /// Lista todos os itens (placeholder).
+    /// Lista todos os itens (dados REAIS do banco!).
+    /// 
+    /// MUDANÇA: Agora retorna dados reais via IGetAllItemsInputPort UseCase
+    /// em vez de hardcode ["item1", "item2"]
     /// </summary>
-    private static Task<IResult> GetAllItems()
+    private static async Task<IResult> GetAllItems(
+        IGetAllItemsInputPort getAllUseCase)  // ← DI: Recebe UseCase (Input Port)
     {
-        return Task.FromResult(Results.Ok(new[] { "item1", "item2" }));
+        try
+        {
+            var items = await getAllUseCase.GetAllAsync();
+            return Results.Ok(items);
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem(ex.Message, statusCode: 500);
+        }
     }
 }
