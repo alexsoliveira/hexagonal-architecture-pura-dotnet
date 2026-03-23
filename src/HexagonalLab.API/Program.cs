@@ -5,6 +5,8 @@ using HexagonalLab.Infrastructure.Data;
 using HexagonalLab.Infrastructure.Repositories;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.OpenApi;
+using Scalar.AspNetCore;
 
 // ========================================================================
 // BOOTSTRAP - Dependency Injection Configuration
@@ -20,6 +22,7 @@ var builder = WebApplication.CreateBuilder(args);
 // ─────────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddOpenApi();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -98,27 +101,60 @@ var app = builder.Build();
 // Only initialize if NOT in Test environment (tests handle DB init separately)
 if (!app.Environment.IsEnvironment("Test"))
 {
-    using (var scope = app.Services.CreateScope())
+    try
     {
-        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await context.Database.MigrateAsync();  // Apply pending migrations (SQL Server)
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await context.Database.MigrateAsync();  // Apply pending migrations (SQL Server)
+        }
+    }
+    catch (Exception ex)
+    {
+        // Log warning but don't crash the app - allows testing Scalar without database
+        Console.WriteLine($"⚠️ Database initialization failed: {ex.Message}");
+        Console.WriteLine("ℹ️ Application will continue without database (useful for testing API docs)");
     }
 }
 
-if (app.Environment.IsDevelopment())
+// ─────────────────────────────────────────────────────────────────
+// Middleware Pipeline
+// ─────────────────────────────────────────────────────────────────
+
+if (!app.Environment.IsDevelopment())
 {
-    // Swagger removed - use OpenAPI spec directly from endpoints
+    app.UseHttpsRedirection();
 }
 
-app.UseHttpsRedirection();
+app.UseRouting();
 app.UseCors("AllowAll");
 app.UseAuthorization();
+app.MapStaticAssets();
+
+// ─────────────────────────────────────────────────────────────────
+// OpenAPI & Scalar Configuration (Development only)
+// MUST come AFTER UseRouting() and UseAuthorization()
+// Reference: https://learn.microsoft.com/pt-br/aspnet/core/fundamentals/openapi/using-openapi-documents?view=aspnetcore-10.0
+// ─────────────────────────────────────────────────────────────────
+
+if (app.Environment.IsDevelopment())
+{
+    // Enable OpenAPI endpoint at /openapi/v1.json
+    app.MapOpenApi().AllowAnonymous();
+}
 
 // ─────────────────────────────────────────────────────────────────
 // 5. Map Minimal API Endpoints
 // ─────────────────────────────────────────────────────────────────
 
 app.MapItemEndpoints();  // Registra endpoints
+
+if (app.Environment.IsDevelopment())
+{
+    // Enable Scalar UI at /scalar
+    // (Must come AFTER item endpoints to ensure proper routing)
+    app.MapScalarApiReference().AllowAnonymous();
+}
 
 // ─────────────────────────────────────────────────────────────────
 

@@ -161,7 +161,7 @@ Write-Host "[STEP 6] Service Access Information" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "API Service:" -ForegroundColor Yellow
 Write-Host "  URL:     http://localhost:5000" -ForegroundColor Green
-Write-Host "  Swagger: http://localhost:5000/swagger" -ForegroundColor Green
+Write-Host "  Scalar API Reference: http://localhost:5000/scalar" -ForegroundColor Green
 Write-Host ""
 Write-Host "SQL Server:" -ForegroundColor Yellow
 Write-Host "  Server:   localhost,1433" -ForegroundColor Green
