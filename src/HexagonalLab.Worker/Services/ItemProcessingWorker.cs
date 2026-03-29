@@ -54,12 +54,12 @@ public class ItemProcessingWorker : BackgroundService
         _logger.LogInformation("→ Same Output Port (Database)");
         _logger.LogInformation("→ ZERO changes to Core! 🎉");
 
-        // Timer: inicia após 10 segundos (aguarda migrations), depois processa a cada 30 segundos
+        // Timer: inicia após 10 segundos (aguarda migrations), depois processa a cada 20 segundos
         _timer = new Timer(
             async _ => await DoWork(cancellationToken),
             null,
             TimeSpan.FromSeconds(10),          // Delay inicial de 10s para garantir que migrations estão prontas
-            TimeSpan.FromSeconds(30));         // Repete a cada 30s
+            TimeSpan.FromSeconds(20));         // Repete a cada 20s
 
         await base.StartAsync(cancellationToken);
     }

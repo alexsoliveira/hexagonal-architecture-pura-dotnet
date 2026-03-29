@@ -204,45 +204,259 @@ HexagonalLab.NET10/
 - .NET 10 SDK
 - Visual Studio 2022 ou VS Code
 - Git
+- Docker (opcional, para rodar containers)
+- SQL Server (local ou Docker)
 
-### Setup Rápido
+### 🚀 Executar Localmente (Simples e Rápido)
+
+#### 1️⃣ **Clonar o repositório**
 
 ```bash
-# Clonar repositório
 git clone https://github.com/seu-usuario/HexagonalLab.NET10.git
 cd HexagonalLab.NET10
+```
 
-# Restaurar dependências
+#### 2️⃣ **Restaurar dependências**
+
+Instala todos os pacotes NuGet necessários:
+
+```bash
 dotnet restore
+```
 
-# Executar testes
+#### 3️⃣ **Executar os testes (verificar que está ok)**
+
+Testa o Core sem banco, sem API:
+
+```bash
 dotnet test
-
-# Build
-dotnet build
-
-# Rodar a API
-cd src/HexagonalLab.Adapters.In
-dotnet run
 ```
 
-### Primeiro Teste
-
-```csharp
-[Fact]
-public void CreateOrder_WithValidData_ShouldSucceed()
-{
-    // Arrange
-    var repository = new FakeOrderRepository();
-    var useCase = new CreateOrderUseCase(repository);
-    
-    // Act
-    var result = useCase.Execute(new CreateOrderRequest { /* ... */ });
-    
-    // Assert
-    Assert.NotNull(result);
-}
+**Resultado esperado:**
 ```
+✅ Passed HexagonalLab.Core.Tests
+✅ All tests passed!
+```
+
+---
+
+### 🐳 Rodar com Docker (Recomendado)
+
+Se preferir rodar tudo containerizado (API + Worker + SQL Server):
+
+#### 1️⃣ **Certifique-se que Docker está rodando**
+
+```bash
+docker --version
+```
+
+#### 2️⃣ **Inicie todos os containers**
+
+```bash
+docker-compose up -d
+```
+
+Isso vai:
+- ✅ Criar container SQL Server 2022
+- ✅ Criar container API (.NET)
+- ✅ Criar container Worker (Background Job)
+- ✅ Executar migrations automaticamente
+
+#### 3️⃣ **Aguarde 30-45 segundos** 
+
+SQL Server leva um tempo para iniciar. Verifique o status:
+
+```bash
+docker-compose ps
+```
+
+**Resultado esperado:**
+```
+NAMES                STATUS
+hexagonal-sqlserver  Up 30s (healthy)
+hexagonal-api        Up 25s
+hexagonal-worker     Up 25s
+```
+
+#### 4️⃣ **Verifique os logs**
+
+**Logs da API:**
+```bash
+docker logs hexagonal-api -f
+```
+
+**Logs do Worker:**
+```bash
+docker logs hexagonal-worker -f
+```
+
+---
+
+### 📊 Operações Comuns
+
+#### 📝 Inserir dados de teste
+
+```bash
+.\scripts\insert-test-data.ps1 -Type sample
+```
+
+Isso insere 5 itens de teste:
+- ITEM-001 (Pedido 001)
+- ITEM-002 (Pedido 002)
+- ... e mais 3
+
+#### 🔍 Consultar itens no banco
+
+```bash
+$DbUser = 'sa'
+$DbPassword = 'Hexagon123'
+$DbName = 'HexagonalLab'
+
+docker exec hexagonal-sqlserver /opt/mssql-tools18/bin/sqlcmd `
+    -S localhost -U $DbUser -P $DbPassword -d $DbName -C `
+    -Q "SELECT Id, Name, Status, ProcessedAt FROM Items ORDER BY CreatedAt DESC"
+```
+
+#### 🧹 Limpar dados
+
+```bash
+$DbUser = 'sa'
+$DbPassword = 'Hexagon123'
+$DbName = 'HexagonalLab'
+
+docker exec hexagonal-sqlserver /opt/mssql-tools18/bin/sqlcmd `
+    -S localhost -U $DbUser -P $DbPassword -d $DbName -C `
+    -Q "DELETE FROM Items"
+```
+
+#### 📋 Ver logs completos do Worker
+
+```bash
+type logs\worker\worker.log
+```
+
+#### 🛑 Parar tudo
+
+```bash
+docker-compose down
+```
+
+---
+
+### 🧪 Testar a API (via HTTP)
+
+Após iniciar via Docker, a API fica disponível em `http://localhost:5000`
+
+#### Criar um item:
+
+```bash
+curl -X POST http://localhost:5000/api/items \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "ITEM-TEST-001",
+    "name": "Teste Manual",
+    "status": "Pending"
+  }'
+```
+
+#### Obter todos os itens:
+
+```bash
+curl http://localhost:5000/api/items
+```
+
+#### Processar um item:
+
+```bash
+curl -X POST http://localhost:5000/api/items/ITEM-TEST-001/process \
+  -H "Content-Type: application/json"
+```
+
+---
+
+### 📱 Fluxo Completo (Passo a Passo)
+
+**O que acontece quando você executa:**
+
+1. **Docker Compose inicia**
+   ```
+   SQL Server → Aguarda 30-45s
+         ↓
+   Migrations → Cria schema
+         ↓
+   API → Inicia e aguarda conexão
+         ↓
+   Worker → Inicia com timer de 20 segundos
+   ```
+
+2. **Você insere dados**
+   ```
+   INSERT → 5 itens com status "Pending"
+   ```
+
+3. **Worker processa automaticamente**
+   ```
+   A cada 20 segundos:
+   ├── Busca itens "Pending"
+   ├── Processa cada um
+   ├── Atualiza status para "Processed"
+   └── Registra timestamp
+   ```
+
+4. **Você verifica resultados**
+   ```
+   Via SQL:
+   SELECT * FROM Items → Todos com status "Processed"
+   
+   Via Logs:
+   docker logs hexagonal-worker → Mostra todas as operações
+   ```
+
+---
+
+### ⚠️ Troubleshooting Comum
+
+#### ❌ "Connection refused - SQL Server não está respondendo"
+**Solução**: Aguarde mais tempo (SQL Server pode levar 60s para iniciar)
+```bash
+# Verificar saúde
+docker-compose ps
+# Aguardar até ficar "healthy"
+```
+
+#### ❌ "Port 1433 already in use"
+**Solução**: Outra instância está rodando
+```bash
+docker-compose down  # Para containers
+# ou
+Stop-Process -Name sqlservr  # Mata SQL Server local
+```
+
+#### ❌ "Migrations failed"
+**Solução**: Limpe e recrie
+```bash
+docker-compose down -v  # Remove volumes
+docker-compose up -d    # Recria do zero
+```
+
+#### ❌ "Worker não está processando"
+**Solução**: Verifique logs
+```bash
+docker logs hexagonal-worker --tail 50
+# Procure por erros na conexão ou configuração
+```
+
+---
+
+### ✅ Checklist de Verificação
+
+Após executar `docker-compose up -d`:
+
+- [ ] SQL Server está saudável: `docker-compose ps` mostra `healthy`
+- [ ] API iniciou: `docker logs hexagonal-api` mostra "Application started"
+- [ ] Worker iniciou: `docker logs hexagonal-worker` mostra "HEXAGONAL LAB WORKER"
+- [ ] Banco tem tabela Items: `docker exec hexagonal-sqlserver ... SELECT COUNT(*) FROM Items`
+- [ ] Worker está processando: `docker logs hexagonal-worker | grep "Processing items"`
 
 ---
 

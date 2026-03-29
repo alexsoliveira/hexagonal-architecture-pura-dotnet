@@ -70,10 +70,14 @@ services:
       sqlserver:
         condition: service_healthy
       api:
-        condition: service_healthy
+        condition: service_started
     environment:
       ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Development}"
       ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=${DB_NAME:-HexagonalLab};User Id=sa;Password=${DB_PASSWORD};TrustServerCertificate=true;"
+      DOTNET_SYSTEM_CONSOLE_ALLOWDIRECTPARSE: "false"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    volumes:
+      - ./logs/worker:/app/logs
     networks:
       - hexagonal-network
     restart: unless-stopped

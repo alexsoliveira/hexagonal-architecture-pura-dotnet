@@ -33,8 +33,20 @@ WORKDIR /app
 # Copy published files
 COPY --from=build /app/publish .
 
-# Set environment variable
+# Set environment variables for unbuffered logging
 ENV ASPNETCORE_ENVIRONMENT=Production
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_SYSTEM_CONSOLE_ALLOWDIRECTPARSE=true
+ENV DOTNET_EnableWriteXorExecuteMemory=false
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+ENV DOTNET_CLI_PREFER_EXITCODE_FOR_FAILURES=true
 
-# Run application
-ENTRYPOINT ["dotnet", "HexagonalLab.Worker.dll"]
+# Create startup script that logs to both stdout and file
+RUN echo '#!/bin/sh' > /app/start.sh && \
+    echo 'mkdir -p /app/logs' >> /app/start.sh && \
+    echo 'echo "[$(date)] Starting Worker..." >&1' >> /app/start.sh && \
+    echo 'exec dotnet HexagonalLab.Worker.dll 2>&1 | tee -a /app/logs/worker.log' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
+# Run application with startup script
+ENTRYPOINT ["/app/start.sh"]

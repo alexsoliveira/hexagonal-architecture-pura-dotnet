@@ -139,7 +139,7 @@ Invoke-WebRequest http://localhost:5000/api/items -UseBasicParsing
 # Database
 DB_NAME=HexagonalLab              # Database name
 DB_PORT=1433                      # SQL Server port
-DB_PASSWORD=HexabolabLab@2024!    # SA password
+DB_PASSWORD=HexagonalLab@2024!    # SA password
 DB_USER=sa                        # SA username
 
 # API

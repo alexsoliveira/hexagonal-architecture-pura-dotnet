@@ -4,30 +4,32 @@ using HexagonalLab.Infrastructure.Data;
 using HexagonalLab.Infrastructure.Repositories;
 using HexagonalLab.Worker.Services;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 // ========================================================================
-// BOOTSTRAP - Worker Service Configuration
+// BOOTSTRAP - Worker Service Configuration with Serilog
 // ========================================================================
-// NOTA: Este é o ÚNICO lugar onde DI é configurado!
-// Se trocar adapter: apenas AQUI muda, nunca no Core.
-// 
-// PADRÃO DE PLUGABILIDADE:
-// - Phase 3 (API Adapter)
-// - Phase 5 (Worker Adapter) ← ESTA AQUI
-// - Phase 6+ (CLI, gRPC, etc.)
-// 
-// TODO: Core é 100% idêntico em TODOS os adapters!
-// ========================================================================
+// Setup Serilog FIRST for maximum logging coverage
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.File(
+        path: "/app/logs/worker.log",
+        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+        rollingInterval: RollingInterval.Day)
+    .CreateLogger();
 
-var builder = Host.CreateDefaultBuilder(args)
-    .ConfigureLogging(logging =>
-    {
-        logging.ClearProviders();
-        logging.AddConsole();
-        logging.SetMinimumLevel(LogLevel.Information);
-    })
-    .ConfigureServices((context, services) =>
-    {
+try
+{
+    Log.Information("═══════════════════════════════════════════════════");
+    Log.Information("🚀 HEXAGONAL LAB WORKER - STARTING UP");
+    Log.Information("═══════════════════════════════════════════════════");
+    Log.Information("Phase 5: Multi-Adapter Pattern (Worker Input Adapter)");
+
+    var builder = Host.CreateDefaultBuilder(args)
+        .UseSerilog()  // Use Serilog instead of default logging
+        .ConfigureServices((context, services) =>
+        {
         // ─────────────────────────────────────────────────────────────────
         // 1. Register Core UseCases (Input Ports)
         // ─────────────────────────────────────────────────────────────────
@@ -77,6 +79,24 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddHostedService<ItemProcessingWorker>();
     });
 
-var host = builder.Build();
+    var host = builder.Build();
 
-await host.RunAsync();
+    // DEBUG: Verify host is built  
+    Log.Information("[AFTER BUILD] Host was built successfully");
+
+    await host.RunAsync();
+
+    Log.Information("[AFTER RUNASYNC] Host.RunAsync completed");
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "💥 FATAL: Application terminated unexpectedly");
+    Environment.Exit(1);
+}
+finally
+{
+    Log.Information("═══════════════════════════════════════════════════");
+    Log.Information("🛑 WORKER SHUTDOWN - See logs above for details");
+    Log.Information("═══════════════════════════════════════════════════");
+    await Log.CloseAndFlushAsync();  // Ensure all logs are written before exit
+}
